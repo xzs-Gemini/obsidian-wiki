@@ -7,6 +7,32 @@ param(
 $ErrorActionPreference = 'Stop'
 $projectRoot = Split-Path -Parent $MyInvocation.MyCommand.Path
 
+if ([string]::IsNullOrWhiteSpace($env:HTTPS_PROXY)) {
+    try {
+        $internetSettings = Get-ItemProperty -LiteralPath 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Internet Settings'
+        if ($internetSettings.ProxyEnable -eq 1 -and -not [string]::IsNullOrWhiteSpace($internetSettings.ProxyServer)) {
+            $proxyServer = [string]$internetSettings.ProxyServer
+            if ($proxyServer -match '(?:^|;)https=([^;]+)') {
+                $proxyServer = $Matches[1]
+            }
+            elseif ($proxyServer -match '(?:^|;)http=([^;]+)') {
+                $proxyServer = $Matches[1]
+            }
+            if ($proxyServer -notmatch '^https?://') {
+                $proxyServer = "http://$proxyServer"
+            }
+            $env:HTTPS_PROXY = $proxyServer
+            if ([string]::IsNullOrWhiteSpace($env:HTTP_PROXY)) {
+                $env:HTTP_PROXY = $proxyServer
+            }
+            Write-Host 'Using the active Windows Internet proxy for this publish run.'
+        }
+    }
+    catch {
+        Write-Warning 'Could not read the Windows Internet proxy; continuing with the current environment.'
+    }
+}
+
 function Invoke-Checked {
     param(
         [Parameter(Mandatory = $true)][string]$Command,

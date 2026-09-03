@@ -43,6 +43,8 @@ publish: false
 
 该脚本会同步白名单内容、执行隐私扫描、构建 Quartz、提交并 Push。没有 Git 仓库、远程仓库或上游分支时会安全停止，不会猜测账号信息。
 
+如果 Windows 已启用系统网络代理，脚本会在本次运行中自动读取并临时传给 Git/npm；代理地址和登录凭据不会写入仓库。
+
 仅同步并本地验证、不提交或 Push：
 
 ```powershell
@@ -84,11 +86,11 @@ npx quartz build --serve
 
 ## 网站地址
 
-计划地址：<https://xzs-gemini.github.io/obsidian-wiki/>。首次 GitHub Pages 部署成功后即可访问。
+<https://xzs-gemini.github.io/obsidian-wiki/>
 
 ## GitHub Repository
 
-计划仓库：<https://github.com/xzs-Gemini/obsidian-wiki>。仓库创建并推送后生效。
+<https://github.com/xzs-Gemini/obsidian-wiki>
 
 ## 隐私保护
 
