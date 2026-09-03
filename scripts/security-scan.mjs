@@ -105,7 +105,7 @@ async function walkFiles(root, current = root, files = []) {
 function frontmatterPublishes(text) {
   const match = text.match(/^\uFEFF?---\r?\n([\s\S]*?)\r?\n---(?:\r?\n|$)/)
   if (!match) return false
-  const document = parseDocument(match[1])
+  const document = parseDocument(match[1], { logLevel: "silent" })
   if (document.errors.length > 0) return false
   return document.toJS()?.publish === true
 }

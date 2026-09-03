@@ -19,7 +19,9 @@ publish: true
 ---
 ```
 
-只有 YAML 中真正的布尔值 `publish: true` 才会公开。正文中出现这段文字、`publish: false`、缺少 `publish` 或写成字符串 `publish: "true"` 都不会公开。
+默认情况下，只有 YAML 中真正的布尔值 `publish: true` 才会公开。正文中出现这段文字、`publish: false`、缺少 `publish` 或写成字符串 `publish: "true"` 都不会公开。
+
+当前用户已明确授权发布创建清单时存在的全部教学笔记。这些精确路径记录在 `publish-selection.json`，同步时只在 Quartz 副本中注入 `publish: true`，不会改写原 Vault。以后新建的笔记不会自动加入清单，仍须使用上述 Frontmatter 才会公开。
 
 ## 如何取消发布
 
@@ -32,6 +34,8 @@ publish: false
 ```
 
 也可以删除 `publish: true`。下一次同步会从 Quartz 的 `content/` 中清除旧页面和不再被公开笔记引用的附件。
+
+对于已经列入 `publish-selection.json` 的全量教学笔记，原笔记中明确写入布尔值 `publish: false` 会优先取消发布；也可以从清单中删除对应相对路径。字符串 `"false"` 不作为取消标记。
 
 ## 如何更新 Wiki
 

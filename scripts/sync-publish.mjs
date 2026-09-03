@@ -9,6 +9,7 @@ import { parseDocument } from "yaml"
 const scriptDir = path.dirname(fileURLToPath(import.meta.url))
 const projectRoot = path.resolve(scriptDir, "..")
 const localConfigPath = path.join(projectRoot, ".publish.local.json")
+const selectionPath = path.join(projectRoot, "publish-selection.json")
 const contentRoot = path.join(projectRoot, "content")
 const stagingRoot = path.join(projectRoot, ".publish-staging")
 const homeTemplate = path.join(projectRoot, "site-home", "index.md")
@@ -61,13 +62,64 @@ function readFrontmatter(text, relativePath) {
   const match = text.match(/^\uFEFF?---\r?\n([\s\S]*?)\r?\n---(?:\r?\n|$)/)
   if (!match) return null
   if (!/^publish\s*:/m.test(match[1])) return null
-  const document = parseDocument(match[1])
+  const document = parseDocument(match[1], { logLevel: "silent" })
   if (document.errors.length > 0) {
     throw new Error(
       `Frontmatter YAML 无法解析：${relativePath}\n${document.errors.map((error) => error.message).join("\n")}`,
     )
   }
   return document.toJS() ?? {}
+}
+
+async function readPublicationSelection(enabled) {
+  if (!enabled) return new Set()
+  const raw = await fs.readFile(selectionPath, "utf8").catch((error) => {
+    if (error?.code === "ENOENT") return null
+    throw error
+  })
+  if (raw === null) return new Set()
+
+  const selection = JSON.parse(raw)
+  if (!Array.isArray(selection.paths)) {
+    throw new Error("publish-selection.json 必须包含 paths 数组")
+  }
+
+  const paths = new Set()
+  for (const value of selection.paths) {
+    if (typeof value !== "string") throw new Error("发布清单路径必须是字符串")
+    const normalized = value.replaceAll("\\", "/").replace(/^\.\//, "")
+    if (
+      normalized === "" ||
+      normalized.startsWith("/") ||
+      /^[a-z]:\//i.test(normalized) ||
+      path.posix.normalize(normalized).startsWith("../") ||
+      path.posix.extname(normalized).toLocaleLowerCase("en-US") !== ".md"
+    ) {
+      throw new Error(`发布清单包含不安全路径：${value}`)
+    }
+    paths.add(normalized.toLocaleLowerCase("en-US"))
+  }
+  return paths
+}
+
+function createPublishedCopy(text, relativePath) {
+  const match = text.match(/^\uFEFF?---\r?\n([\s\S]*?)\r?\n---(?:\r?\n|$)/)
+  const fallbackTitle = JSON.stringify(path.basename(relativePath, ".md"))
+  if (!match) {
+    return `---\ntitle: ${fallbackTitle}\npublish: true\n---\n\n${text.replace(/^\uFEFF/, "")}`
+  }
+
+  const body = text.slice(match[0].length)
+  if (/\{\{[^}]+\}\}/.test(match[1])) {
+    return `---\ntitle: ${fallbackTitle}\npublish: true\n---\n\n${body}`
+  }
+  const document = parseDocument(match[1], { logLevel: "silent" })
+  const parsed = document.errors.length > 0 ? null : document.toJS()
+  if (parsed === null || typeof parsed !== "object" || Array.isArray(parsed)) {
+    return `---\ntitle: ${fallbackTitle}\npublish: true\n---\n\n${body}`
+  }
+  document.set("publish", true)
+  return `---\n${document.toString().trimEnd()}\n---\n\n${body}`
 }
 
 function sanitizeReference(raw) {
@@ -177,6 +229,15 @@ async function copyPreservingPath(source, destinationRoot, relative) {
   await fs.copyFile(source, destination)
 }
 
+async function writePreservingPath(text, destinationRoot, relative) {
+  const destination = path.resolve(destinationRoot, relative)
+  if (!isInside(destinationRoot, destination)) {
+    throw new Error(`拒绝写入发布目录之外：${relative}`)
+  }
+  await fs.mkdir(path.dirname(destination), { recursive: true })
+  await fs.writeFile(destination, text, "utf8")
+}
+
 async function main() {
   const localConfig = JSON.parse(await fs.readFile(localConfigPath, "utf8"))
   const argumentIndex = process.argv.indexOf("--vault")
@@ -207,12 +268,29 @@ async function main() {
     (file) =>
       !file.symbolicLink && path.extname(file.relative).toLocaleLowerCase("en-US") === ".md",
   )
+  const selectedPaths = await readPublicationSelection(argumentIndex < 0)
+  const availableMarkdownPaths = new Set(
+    markdownFiles.map((file) => file.relative.toLocaleLowerCase("en-US")),
+  )
+  const missingSelectedPaths = [...selectedPaths].filter(
+    (relative) => !availableMarkdownPaths.has(relative),
+  )
+  if (missingSelectedPaths.length > 0) {
+    throw new Error(`发布清单中的文件不存在：\n- ${missingSelectedPaths.join("\n- ")}`)
+  }
   const publishedNotes = []
 
   for (const file of markdownFiles) {
     const text = await fs.readFile(file.absolute, "utf8")
+    const selectedByManifest = selectedPaths.has(file.relative.toLocaleLowerCase("en-US"))
     const frontmatter = readFrontmatter(text, file.relative)
-    if (frontmatter?.publish === true) publishedNotes.push({ ...file, text })
+    if (frontmatter?.publish === true || (selectedByManifest && frontmatter?.publish !== false)) {
+      publishedNotes.push({
+        ...file,
+        text: selectedByManifest ? createPublishedCopy(text, file.relative) : text,
+        selectedByManifest,
+      })
+    }
   }
 
   const indexes = buildFileIndexes(allFiles.filter((file) => !file.symbolicLink))
@@ -264,7 +342,11 @@ async function main() {
   await fs.mkdir(stagingRoot, { recursive: true })
 
   for (const note of publishedNotes) {
-    await copyPreservingPath(note.absolute, stagingRoot, note.relative)
+    if (note.selectedByManifest) {
+      await writePreservingPath(note.text, stagingRoot, note.relative)
+    } else {
+      await copyPreservingPath(note.absolute, stagingRoot, note.relative)
+    }
   }
   for (const attachment of attachments.values()) {
     await copyPreservingPath(attachment.absolute, stagingRoot, attachment.relative)
@@ -287,6 +369,7 @@ async function main() {
     generatedAt: new Date().toISOString(),
     sourceMarkdownCount: markdownFiles.length,
     publishedNoteCount: publishedNotes.length,
+    manifestSelectedNoteCount: publishedNotes.filter((note) => note.selectedByManifest).length,
     unpublishedNoteCount: markdownFiles.length - publishedNotes.length,
     copiedAttachmentCount: attachments.size,
     generatedHomePage: !hasPublishedRootIndex,
