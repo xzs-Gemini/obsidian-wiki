@@ -84,11 +84,11 @@ npx quartz build --serve
 
 ## 网站地址
 
-待 GitHub 登录、仓库创建和首次部署后回填。
+计划地址：<https://xzs-gemini.github.io/obsidian-wiki/>。首次 GitHub Pages 部署成功后即可访问。
 
 ## GitHub Repository
 
-建议仓库名：`obsidian-wiki`。待用户完成 GitHub 登录/授权后创建并回填实际地址。
+计划仓库：<https://github.com/xzs-Gemini/obsidian-wiki>。仓库创建并推送后生效。
 
 ## 隐私保护
 

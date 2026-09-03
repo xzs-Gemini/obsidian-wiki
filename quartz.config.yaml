@@ -6,7 +6,7 @@ configuration:
   enablePopovers: true
   analytics: null
   locale: zh-CN
-  baseUrl: example.invalid/obsidian-wiki
+  baseUrl: xzs-gemini.github.io/obsidian-wiki
   ignorePatterns:
     - "**/.obsidian/**"
     - "**/.git/**"
